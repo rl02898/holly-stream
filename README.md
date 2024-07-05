@@ -3,6 +3,7 @@ This application will ingest your computers webcam feed (using ffmpeg), apply an
 
 # Requirements
 
+* FFmpeg
 * Docker and the compose plugin
 * At least 4GB of RAM
 * Camera, at least 720p recommended
