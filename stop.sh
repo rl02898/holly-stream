@@ -8,6 +8,7 @@ if [ "${OBJECT_DETECTION}" == "True" ]; then
     echo "Stopping holly-stream..."
     pid=$(cat .process.pid)
     kill "$pid"
+    pkill raspberrypi_ipa
     rm .process.pid .log.out
     echo "Complete"
 
@@ -19,6 +20,7 @@ if [ "${OBJECT_DETECTION}" == "True" ]; then
 elif [ "${OBJECT_DETECTION}" == "False" ]; then
     echo "Stopping holly-stream..."
     pkill ffmpeg
+    pkill raspberrypi_ipa
     rm .log.out
     echo "Complete"
 
