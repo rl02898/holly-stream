@@ -4,6 +4,10 @@ source .env
 
 if [ -z $OBJECT_DETECTION ]; then echo "The environment variable OBJECT_DETECTION is required. This is a boolean value True/False."; fi
 
+if [ -z $MOTION_DETECTION ]; then echo "The environment variable MOTION_DETECTION is required. This is a boolean value True/False."; fi
+
+if [ "${OBJECT_DETECTION}" == "True" ] && [ "${MOTION_DETECTION}" == "True" ]; then echo "Both OBJECT_DETECTION and MOTION_DETECTION cannot be True, choose only one"; fi
+
 if [ "${OBJECT_DETECTION}" == "True" ]; then
     docker compose up -d triton
 
@@ -35,6 +39,11 @@ if [ "${OBJECT_DETECTION}" == "True" ]; then
     echo $! > .process.pid
     echo "Holly-stream started."
 
+elif [ "${MOTION_DETECTION}" == "True"]; then
+    nohup $PWD/.stream_env/bin/python3 app/motion.py > .log.out &
+    echo $! > .process.pid
+    echo "Motion detection started."
+    
 elif [ "${OBJECT_DETECTION}" == "False" ]; then
     # Checking if required environment variables are defined. If not, then defining them.
     if [ -z $CAMERA_FPS ]; then echo "You did not define CAMERA_FPS. It will default to 30." && CAMERA_FPS=30; fi
@@ -77,6 +86,6 @@ EOF
     nohup sh -c "$stream_command" > .log.out &
 
 else
-    echo "Invalid input for OBJECT_DETECTION. Expecting True or False; received ${OBJECT_DETECTION}."
+    echo "Invalid input for OBJECT_DETECTION or MOTION_DETECTION. At least one value must be True."
     exit 120
 fi

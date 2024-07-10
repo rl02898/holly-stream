@@ -1,16 +1,16 @@
 import os
-import cv2
-import torch
-import imutils
 import subprocess
-import numpy as np
-
 from ast import literal_eval
-from dotenv import load_dotenv
-from picamera2 import Picamera2
-from libcamera import Transform
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Tuple, Union, Optional, Type
+
+import cv2
+import imutils
+import numpy as np
+import torch
+from dotenv import load_dotenv
+from libcamera import Transform
+from picamera2 import Picamera2
 
 
 class EnvArgumentParser():
@@ -498,14 +498,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        args.TRITON_URL,
-        args.MODEL_NAME,
-        args.STREAM_IP,
-        args.STREAM_PORT,
-        args.STREAM_APPLICATION,
-        args.STREAM_KEY,
-        args.CAMERA_WIDTH,
-        args.CAMERA_HEIGHT,
-        args.CAMERA_FPS,
-        args.SANTA_HAT_PLUGIN
+        triton_url=args.TRITON_URL,
+        model_name=args.MODEL_NAME,
+        stream_ip=args.STREAM_IP,
+        stream_port=args.STREAM_PORT,
+        stream_application=args.STREAM_APPLICATION,
+        stream_key=args.STREAM_KEY,
+        camera_width=args.CAMERA_WIDTH,
+        camera_height=args.CAMERA_HEIGHT,
+        camera_fps=args.CAMERA_FPS,
+        santa_hat_plugin=args.SANTA_HAT_PLUGIN,
     )
