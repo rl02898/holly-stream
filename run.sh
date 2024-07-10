@@ -39,7 +39,7 @@ if [ "${OBJECT_DETECTION}" == "True" ]; then
     echo $! > .process.pid
     echo "Holly-stream started."
 
-elif [ "${MOTION_DETECTION}" == "True"]; then
+elif [ "${MOTION_DETECTION}" == "True" ]; then
     nohup $PWD/.stream_env/bin/python3 app/motion.py > .log.out &
     echo $! > .process.pid
     echo "Motion detection started."
