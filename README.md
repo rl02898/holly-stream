@@ -139,6 +139,11 @@ A few comments about the parameters:
 - If you are streaming the feed to another server set the `STREAM_IP` to the public IP address for that server. Also make sure you expose port 1935 on the firewall and router if necessary for the server your sending the stream to.
 ---
 - The variable `SANTA_HAT_PLUGIN`, if set to True, will not add a bounding box, but a santa hat to the object with the highest probability score. I use this parameter when detecting my dog using a custom model, especially around Christmas!
+---
+- The `MOTION_DETECTION` variable is a boolean that turns the motion detection feature on/off. This feature will detect motion and record a x-second video and send the results to a remote web server. These other options can controlled via other environment variables.
+- The `MOTION_THRESHOLD` variable is the threshold of the sensitivity of motion. You may have to play around with this number until you get a satisfactory value.
+- The `VIDEO_LENGTH` variable will set the length of the video recorded once motion is detected.
+- The `VIDEOS_FILE_PATH` variable is the path where the video will be uploaded on your remote web server.
 
 Lastly, to receive the stream on the device you picked above you have two options:
 
