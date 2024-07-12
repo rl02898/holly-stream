@@ -1,6 +1,8 @@
 <img src="./app/images/logo.png" alt="Failed to load image." style="width: auto;">
 This application will ingest your computers webcam feed (using ffmpeg), apply an object detection task on the feed with bounding boxes, and send that feed via RTMP to an address of your choice. You can also turn off object detection to create a simple live stream camera, good for a security system or monitoring system.
 
+There is also a feature, added recently, that can detect motion (within a defined threshold), and record a x-second video and upload it to a remote web server. This feature can be activated the same way as the object detection task, a simple environment variable labeled either "True" or "False".
+
 # Requirements
 
 * FFmpeg
@@ -105,6 +107,7 @@ AWS_ACCESS_KEY_ID=<aws_access_key_id>
 AWS_SECRET_ACCESS_KEY=<aws_secret_access_key>
 AWS_DEFAULT_REGION=<aws_default_region>
 
+STREAM_USER=username
 STREAM_IP=127.0.0.1
 STREAM_PORT=1935
 STREAM_APPLICATION=live
@@ -114,6 +117,11 @@ CAMERA_WIDTH=1280
 CAMERA_HEIGHT=720
 CAMERA_FPS=30
 SANTA_HAT_PLUGIN=False
+
+MOTION_DETECTION=False
+MOTION_THRESHOLD=0.75
+VIDEO_LENGTH=30
+VIDEOS_FILE_PATH=/app/videos
 ```
 
 A few comments about the parameters:
@@ -131,6 +139,11 @@ A few comments about the parameters:
 - If you are streaming the feed to another server set the `STREAM_IP` to the public IP address for that server. Also make sure you expose port 1935 on the firewall and router if necessary for the server your sending the stream to.
 ---
 - The variable `SANTA_HAT_PLUGIN`, if set to True, will not add a bounding box, but a santa hat to the object with the highest probability score. I use this parameter when detecting my dog using a custom model, especially around Christmas!
+---
+- The `MOTION_DETECTION` variable is a boolean that turns the motion detection feature on/off. This feature will detect motion and record a x-second video and send the results to a remote web server. These other options can controlled via other environment variables.
+- The `MOTION_THRESHOLD` variable is the threshold of the sensitivity of motion. You may have to play around with this number until you get a satisfactory value.
+- The `VIDEO_LENGTH` variable will set the length of the video recorded once motion is detected.
+- The `VIDEOS_FILE_PATH` variable is the path where the video will be uploaded on your remote web server.
 
 Lastly, to receive the stream on the device you picked above you have two options:
 
