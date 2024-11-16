@@ -1,20 +1,22 @@
 import os
-import cv2
-import torch
-import imutils
 import subprocess
-import numpy as np
-
 from ast import literal_eval
-from dotenv import load_dotenv
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Tuple, Union, Optional, Type
+
+import cv2
+import imutils
+import numpy as np
+import torch
+from dotenv import load_dotenv
+from torch.utils.dlpack import from_dlpack
 
 
-class EnvArgumentParser():
+class EnvArgumentParser:
     """
     A class for parsing environment variables as arguments with most Python types.
     """
+
     def __init__(self):
         self.dict: Dict[str, Any] = {}
 
@@ -22,11 +24,14 @@ class EnvArgumentParser():
         """
         A custom dictionary subclass for accessing arguments as attributes.
         """
+
         __getattr__ = dict.get
         __setattr__ = dict.__setitem__
         __delattr__ = dict.__delitem__
 
-    def add_arg(self, variable: str, default: Any = None, d_type: Type = str) -> None:
+    def add_arg(
+        self, variable: str, default: Any = None, d_type: Type = str
+    ) -> None:
         """
         Add an argument to be parsed from an environment variable.
 
@@ -41,9 +46,13 @@ class EnvArgumentParser():
                 if isinstance(default, d_type):
                     value = default
                 else:
-                    raise TypeError(f"The default value for {variable} cannot be cast to the data type provided.")
+                    raise TypeError(
+                        f"The default value for {variable} cannot be cast to the data type provided."
+                    )
             except TypeError:
-                raise TypeError(f"The type you provided for {variable} is not valid.")
+                raise TypeError(
+                    f"The type you provided for {variable} is not valid."
+                )
         else:
             if callable(d_type):
                 value = self._cast_type(env, d_type)
@@ -68,22 +77,34 @@ class EnvArgumentParser():
             try:
                 cast_value = literal_eval(arg)
                 if not isinstance(cast_value, d_type):
-                    raise TypeError(f"The value cast type ({d_type}) does not match the value given for {arg}")
+                    raise TypeError(
+                        f"The value cast type ({d_type}) does not match the value given for {arg}"
+                    )
             except ValueError as e:
-                raise ValueError(f"Argument {arg} does not match given data type or is not supported:", str(e))
+                raise ValueError(
+                    f"Argument {arg} does not match given data type or is not supported:",
+                    str(e),
+                )
             except SyntaxError as e:
-                raise SyntaxError(f"Check the types entered for arugment {arg}:", str(e))
+                raise SyntaxError(
+                    f"Check the types entered for arugment {arg}:", str(e)
+                )
         else:
             try:
                 cast_value = d_type(arg)
             except ValueError as e:
-                raise ValueError(f"Argument {arg} does not match given data type or is not supported:", str(e))
+                raise ValueError(
+                    f"Argument {arg} does not match given data type or is not supported:",
+                    str(e),
+                )
             except SyntaxError as e:
-                raise SyntaxError(f"Check the types entered for arugment {arg}:", str(e))
-        
+                raise SyntaxError(
+                    f"Check the types entered for arugment {arg}:", str(e)
+                )
+
         return cast_value
-    
-    def parse_args(self) -> '_define_dict':
+
+    def parse_args(self) -> "_define_dict":
         """
         Parse the added arguments from the environment variables.
 
@@ -112,6 +133,7 @@ class TritonClient:
     Raises:
         RuntimeError: If an unsupported protocol is used (other than HTTP or GRPC).
     """
+
     def __init__(self, url: str, model: str):
         """
         Initialize the TritonClient instance.
@@ -120,41 +142,48 @@ class TritonClient:
             url (str): The URL of the Triton Inference Server.
             model (str): The name of the model to be used for inference.
         """
+
         parsed_url = urlparse(url)
         if parsed_url.scheme == "grpc":
             from tritonclient.grpc import InferenceServerClient, InferInput
 
-            self.client: InferenceServerClient = InferenceServerClient(parsed_url.netloc)
+            self.client: InferenceServerClient = InferenceServerClient(
+                parsed_url.netloc
+            )
             self.model_name: str = model
-            self.metadata: dict = self.client.get_model_metadata(self.model_name, as_json=True)
-            self.config: dict = self.client.get_model_config(self.model_name, as_json=True)["config"]
+            self.metadata: dict = self.client.get_model_metadata(
+                self.model_name, as_json=True
+            )
+            self.config: dict = self.client.get_model_config(
+                self.model_name, as_json=True
+            )["config"]
 
             def create_input_placeholders() -> List[InferInput]:
                 return [
                     InferInput(
-                        i['name'],
-                        [int(s) for s in i['shape']],
-                        i['datatype']
+                        i["name"], [int(s) for s in i["shape"]], i["datatype"]
                     )
-                    for i in self.metadata['inputs']
+                    for i in self.metadata["inputs"]
                 ]
 
         elif parsed_url.scheme == "http":
             from tritonclient.http import InferenceServerClient, InferInput
 
-            self.client: InferenceServerClient = InferenceServerClient(parsed_url.netloc)
+            self.client: InferenceServerClient = InferenceServerClient(
+                parsed_url.netloc
+            )
             self.model_name: str = model
-            self.metadata: dict = self.client.get_model_metadata(self.model_name)
+            self.metadata: dict = self.client.get_model_metadata(
+                self.model_name
+            )
             self.config: dict = self.client.get_model_config(self.model_name)
 
             def create_input_placeholders() -> List[InferInput]:
                 return [
                     InferInput(
-                        i['name'],
-                        [int(s) for s in i['shape']],
-                        i['datatype']
+                        i["name"], [int(s) for s in i["shape"]], i["datatype"]
                     )
-                    for i in self.metadata['inputs']
+                    for i in self.metadata["inputs"]
                 ]
 
         else:
@@ -177,13 +206,16 @@ class TritonClient:
         Raises:
             RuntimeError: If no inputs are provided or if the number of inputs does not match the expected number.
         """
+
         inputs = self._create_inputs(*args)
         response = self.client.infer(model_name=self.model_name, inputs=inputs)
         result: List[torch.Tensor] = []
-        for output in self.metadata['outputs']:
-            tensor = torch.tensor(response.as_numpy(output['name']))
+        for output in self.metadata["outputs"]:
+            tensor = from_dlpack(
+                response.get_tensor(output["name"]).to_dlpack()
+            )
             result.append(tensor)
-        
+
         predictions = result[0].tolist()
         bboxes = [item[:4] for item in predictions]
         confs = [round(float(item[4]), 2) for item in predictions]
@@ -204,6 +236,7 @@ class TritonClient:
         Raises:
             RuntimeError: If no inputs are provided or if the number of inputs does not match the expected number.
         """
+
         args_len = len(args)
         if not args_len:
             raise RuntimeError("No inputs provided.")
@@ -212,7 +245,9 @@ class TritonClient:
 
         if args_len:
             if args_len != len(placeholders):
-                raise RuntimeError(f"Expected {len(placeholders)} inputs, got {args_len}.")
+                raise RuntimeError(
+                    f"Expected {len(placeholders)} inputs, got {args_len}."
+                )
             for input, value in zip(placeholders, args):
                 input.set_data_from_numpy(value)
 
@@ -226,8 +261,13 @@ class TritonClient:
             Optional[List[str]]: The list of class labels, or None if not available.
         """
         label_filename = self.config["output"][0]["label_filename"]
-        docker_file_path = f"/root/app/triton/{self.model_name}/{label_filename}"
-        local_file_path = os.path.join(os.path.abspath(os.getcwd()), f"triton/{self.model_name}/{label_filename}")
+        docker_file_path = (
+            f"/root/app/triton/{self.model_name}/{label_filename}"
+        )
+        local_file_path = os.path.join(
+            os.path.abspath(os.getcwd()),
+            f"triton/{self.model_name}/{label_filename}",
+        )
 
         if os.path.isfile(docker_file_path):
             with open(docker_file_path, "r") as file:
@@ -273,7 +313,14 @@ class Annotator:
         santa_hat_mask (np.ndarray): The Santa hat mask image.
         santa_hat_plugin (bool): Indicates whether to use the Santa hat plugin.
     """
-    def __init__(self, classes: List[str], width: int = 1280, height: int = 720, santa_hat_plugin: bool = False):
+
+    def __init__(
+        self,
+        classes: List[str],
+        width: int = 1280,
+        height: int = 720,
+        santa_hat_plugin: bool = False,
+    ):
         """
         Initialize the Annotator instance.
 
@@ -283,6 +330,7 @@ class Annotator:
             height (int): The height of the frame. Defaults to 720.
             santa_hat_plugin (bool): Indicates whether to use the Santa hat plugin. Defaults to False.
         """
+
         self.width = width
         self.height = height
         self.classes = classes
@@ -291,7 +339,13 @@ class Annotator:
         self.santa_hat_mask = cv2.imread("images/santa_hat_mask.png")
         self.santa_hat_plugin = santa_hat_plugin
 
-    def __call__(self, frame: np.ndarray, bboxes: List[List[float]], confs: List[float], indexes: List[int]) -> np.ndarray:
+    def __call__(
+        self,
+        frame: np.ndarray,
+        bboxes: List[List[float]],
+        confs: List[float],
+        indexes: List[int],
+    ) -> np.ndarray:
         """
         Annotate the frame with bounding boxes, class labels, and confidence scores.
 
@@ -304,6 +358,7 @@ class Annotator:
         Returns:
             np.ndarray: The annotated frame.
         """
+
         if not self.santa_hat_plugin:
             for i in range(len(bboxes)):
                 xmin, ymin, xmax, ymax = [int(j) for j in bboxes[i]]
@@ -313,18 +368,18 @@ class Annotator:
                     pt1=(xmin, ymin),
                     pt2=(xmax, ymax),
                     color=color,
-                    thickness=2
+                    thickness=2,
                 )
 
                 frame = cv2.putText(
                     img=frame,
-                    text=f'{self.classes[indexes[i]]} ({str(confs[i])})',
+                    text=f"{self.classes[indexes[i]]} ({str(confs[i])})",
                     org=(xmin, ymin - 5),
                     fontFace=cv2.FONT_HERSHEY_PLAIN,
                     fontScale=0.75,
                     color=color,
                     thickness=1,
-                    lineType=cv2.LINE_AA
+                    lineType=cv2.LINE_AA,
                 )
 
             return frame
@@ -345,37 +400,70 @@ class Annotator:
         Returns:
             np.ndarray: The frame with the Santa hat overlaid on the detected object.
         """
-        bbox = [int(i * scalar) for i, scalar in zip(bbox, [self.width, self.height, self.width, self.height])]
+
+        bbox = [
+            int(i * scalar)
+            for i, scalar in zip(
+                bbox, [self.width, self.height, self.width, self.height]
+            )
+        ]
         x, y = bbox[0], bbox[1] + 20
 
-        resize_width = bbox[2]-bbox[0]
+        resize_width = bbox[2] - bbox[0]
         santa_hat = imutils.resize(self.santa_hat.copy(), width=resize_width)
-        santa_hat_mask = imutils.resize(self.santa_hat_mask.copy(), width=resize_width)
+        santa_hat_mask = imutils.resize(
+            self.santa_hat_mask.copy(), width=resize_width
+        )
         hat_height, hat_width = santa_hat.shape[0], santa_hat.shape[1]
 
         mask_boolean = santa_hat_mask[:, :, 0] == 0
-        mask_rgb_boolean = np.stack([mask_boolean, mask_boolean, mask_boolean], axis=2)
+        mask_rgb_boolean = np.stack(
+            [mask_boolean, mask_boolean, mask_boolean], axis=2
+        )
 
         if x >= 0 and y >= 0:
-            h = hat_height - max(0, y+hat_height-self.height)
-            w = hat_width - max(0, x+hat_width-self.width)
-            frame[y-h:y, x:x+w, :] = frame[y-h:y, x:x+w, :] * ~mask_rgb_boolean[0:h, 0:w, :] + (santa_hat * mask_rgb_boolean)[0:h, 0:w, :]
-            
+            h = hat_height - max(0, y + hat_height - self.height)
+            w = hat_width - max(0, x + hat_width - self.width)
+            frame[y - h : y, x : x + w, :] = (
+                frame[y - h : y, x : x + w, :] * ~mask_rgb_boolean[0:h, 0:w, :]
+                + (santa_hat * mask_rgb_boolean)[0:h, 0:w, :]
+            )
+
         elif x < 0 and y < 0:
             h = hat_height + y
             w = hat_width + x
-            frame[0:0+h, 0:0+w, :] = frame[0:0+h, 0:0+w, :] * ~mask_rgb_boolean[hat_height-h:hat_height, hat_width-w:hat_width, :] + (santa_hat * mask_rgb_boolean)[hat_height-h:hat_height, hat_width-w:hat_width, :]
-            
+            frame[0 : 0 + h, 0 : 0 + w, :] = (
+                frame[0 : 0 + h, 0 : 0 + w, :]
+                * ~mask_rgb_boolean[
+                    hat_height - h : hat_height, hat_width - w : hat_width, :
+                ]
+                + (santa_hat * mask_rgb_boolean)[
+                    hat_height - h : hat_height, hat_width - w : hat_width, :
+                ]
+            )
+
         elif x < 0 and y >= 0:
-            h = hat_height - max(0, y+hat_height-self.height)
+            h = hat_height - max(0, y + hat_height - self.height)
             w = hat_width + x
-            frame[y:y+h, 0:0+w, :] = frame[y:y+h, 0:0+w, :] * ~mask_rgb_boolean[0:h, hat_width-w:hat_width, :] + (santa_hat * mask_rgb_boolean)[0:h, hat_width-w:hat_width, :]
-            
+            frame[y : y + h, 0 : 0 + w, :] = (
+                frame[y : y + h, 0 : 0 + w, :]
+                * ~mask_rgb_boolean[0:h, hat_width - w : hat_width, :]
+                + (santa_hat * mask_rgb_boolean)[
+                    0:h, hat_width - w : hat_width, :
+                ]
+            )
+
         elif x >= 0 and y < 0:
             h = hat_height + y
-            w = hat_width - max(0, x+hat_width-self.width)
-            frame[0:0+h, x:x+w, :] = frame[0:0+h, x:x+w, :] * ~mask_rgb_boolean[hat_height-h:hat_height, 0:w, :] + (santa_hat * mask_rgb_boolean)[hat_height-h:hat_height, 0:w, :]
-        
+            w = hat_width - max(0, x + hat_width - self.width)
+            frame[0 : 0 + h, x : x + w, :] = (
+                frame[0 : 0 + h, x : x + w, :]
+                * ~mask_rgb_boolean[hat_height - h : hat_height, 0:w, :]
+                + (santa_hat * mask_rgb_boolean)[
+                    hat_height - h : hat_height, 0:w, :
+                ]
+            )
+
         return frame
 
 
@@ -389,7 +477,7 @@ def main(
     camera_index: int,
     camera_width: int,
     camera_height: int,
-    santa_hat_plugin: bool
+    santa_hat_plugin: bool,
 ) -> None:
     """
     Main function to run the RTMP stream, object detection and annotation pipeline.
@@ -409,43 +497,46 @@ def main(
     Returns:
         None
     """
+
     camera = cv2.VideoCapture(camera_index)
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, camera_width)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
     camera_fps = int(camera.get(cv2.CAP_PROP_FPS))
 
     rtmp_url = "rtmp://{}:{}/{}/{}".format(
-        stream_ip,
-        stream_port,
-        stream_application,
-        stream_key
+        stream_ip, stream_port, stream_application, stream_key
     )
 
     command = [
-        'ffmpeg', '-y',
-        '-f', 'rawvideo',
-        '-vcodec', 'rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-s', "{}x{}".format(camera_width, camera_height),
-        '-r', str(camera_fps),
-        '-i', '-',
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-preset', 'ultrafast', 
-        '-f', 'flv',
-        rtmp_url
+        "ffmpeg",
+        "-y",
+        "-f",
+        "rawvideo",
+        "-vcodec",
+        "rawvideo",
+        "-pix_fmt",
+        "bgr24",
+        "-s",
+        "{}x{}".format(camera_width, camera_height),
+        "-r",
+        str(camera_fps),
+        "-i",
+        "-",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "ultrafast",
+        "-f",
+        "flv",
+        rtmp_url,
     ]
 
-    model = TritonClient(
-        triton_url,
-        model_name
-    )
+    model = TritonClient(triton_url, model_name)
 
     annotator = Annotator(
-        model.classes,
-        camera_width,
-        camera_height,
-        santa_hat_plugin
+        model.classes, camera_width, camera_height, santa_hat_plugin
     )
 
     period = 2
@@ -469,10 +560,10 @@ def main(
             tracking_index += 1
 
             p.stdin.write(frame.tobytes())
-    
+
     finally:
         camera.release()
-    
+
     return
 
 
@@ -501,5 +592,5 @@ if __name__ == "__main__":
         args.CAMERA_INDEX,
         args.CAMERA_WIDTH,
         args.CAMERA_HEIGHT,
-        args.SANTA_HAT_PLUGIN
+        args.SANTA_HAT_PLUGIN,
     )

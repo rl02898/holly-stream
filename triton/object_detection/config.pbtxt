@@ -29,10 +29,6 @@ version_policy: {
   latest: { num_versions: 1 }
 }
 
-response_cache { 
-  enable: True
-}
-
 optimization { 
   execution_accelerators {
     gpu_execution_accelerator : [
