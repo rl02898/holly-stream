@@ -1,5 +1,5 @@
-ARG TRITON_VERSION=2.51.0
-ARG TRITON_CONTAINER_VERSION=24.10
+ARG TRITON_VERSION=2.45.0
+ARG TRITON_CONTAINER_VERSION=24.04
 
 FROM nvcr.io/nvidia/tritonserver:${TRITON_CONTAINER_VERSION}-py3 AS full
 FROM nvcr.io/nvidia/tritonserver:${TRITON_CONTAINER_VERSION}-py3-min
@@ -9,7 +9,6 @@ ARG TRITON_CONTAINER_VERSION
 
 ENV TRITON_SERVER_VERSION=${TRITON_VERSION}
 ENV NVIDIA_TRITON_SERVER_VERSION=${TRITON_CONTAINER_VERSION}
-LABEL com.nvidia.tritonserver.version="${TRITON_SERVER_VERSION}"
 ENV PATH=/opt/tritonserver/bin:${PATH}
 ENV UCX_MEM_EVENTS=no
 ENV TF_ADJUST_HUE_FUSED=1
@@ -21,6 +20,7 @@ ENV TRITON_SERVER_USER=triton-server
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TCMALLOC_RELEASE_RATE=200
 ENV DCGM_VERSION=3.2.6
+LABEL com.nvidia.tritonserver.version="${TRITON_SERVER_VERSION}"
 
 ENV TRITON_SERVER_USER=triton-server
 RUN userdel tensorrt-server > /dev/null 2>&1 || true && \
@@ -35,7 +35,7 @@ RUN userdel tensorrt-server > /dev/null 2>&1 || true && \
         software-properties-common wget libgomp1 && \
     rm -rf /var/lib/apt/lists/* && \
     curl -o /tmp/cuda-keyring.deb \
-          https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb && \
+        https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb && \
     apt install /tmp/cuda-keyring.deb && \
     rm /tmp/cuda-keyring.deb && \
     apt-get update && apt-get install -y datacenter-gpu-manager=1:3.2.6 && \
@@ -45,28 +45,17 @@ RUN userdel tensorrt-server > /dev/null 2>&1 || true && \
     apt-get update && apt-get install -y --no-install-recommends \
         python3 libarchive-dev python3-pip libpython3-dev
 
+WORKDIR /opt/tritonserver
+COPY ./requirements.txt ./
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir --upgrade wheel setuptools virtualenv && \
-    pip3 install --no-cache-dir "numpy<2" torch torchvision && \
-    pip3 install --no-cache-dir python-dotenv opencv-python && \
-    rm -rf /var/lib/apt/lists/*
+    pip3 install --no-cache-dir -r requirements.txt && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -fr /opt/tritonserver/*
 
-WORKDIR /opt/tritonserver
-RUN rm -fr /opt/tritonserver/*
-ENV NVIDIA_PRODUCT_NAME="Triton Server"
-ENV NVIDIA_BUILD_ID=117849258
-LABEL com.nvidia.build.id=117849258
-LABEL com.nvidia.build.ref=cd309d79dc2130ab890fd63def83fa8c17668393
-
-WORKDIR /opt/tritonserver
-COPY --chown=1000:1000 --from=full /opt/tritonserver/LICENSE .
-COPY --chown=1000:1000 --from=full /opt/tritonserver/TRITON_VERSION .
-COPY --chown=1000:1000 --from=full /opt/tritonserver/NVIDIA_Deep_Learning_Container_License.pdf .
 COPY --chown=1000:1000 --from=full /opt/tritonserver/bin bin/
 COPY --chown=1000:1000 --from=full /opt/tritonserver/lib lib/
 COPY --chown=1000:1000 --from=full /opt/tritonserver/include include/
 COPY --chown=1000:1000 --from=full /opt/tritonserver/backends/python /opt/tritonserver/backends/python
-COPY --chown=1000:1000 --from=full /opt/tritonserver/backends/onnxruntime /opt/tritonserver/backends/onnxruntime
 COPY --chown=1000:1000 --from=full /opt/tritonserver/backends/tensorrt /opt/tritonserver/backends/tensorrt
 COPY --chown=1000:1000 --from=full /opt/tritonserver/repoagents/checksum /opt/tritonserver/repoagents/checksum
 COPY --chown=1000:1000 --from=full /usr/bin/serve /usr/bin/.
@@ -74,4 +63,4 @@ COPY --chown=1000:1000 --from=full /usr/bin/serve /usr/bin/.
 RUN chown triton-server:triton-server /opt/tritonserver/backends
 RUN chown triton-server:triton-server /opt/tritonserver/repoagents
 
-CMD ["/bin/sh", "-c", "tritonserver --model-repository=${MODEL_REPOSITORY}"]
+CMD ["/bin/sh", "-c", "tritonserver --model-repository=${MODEL_REPOSITORY} --allow-metrics=false"]

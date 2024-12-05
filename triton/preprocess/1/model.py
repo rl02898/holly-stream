@@ -3,8 +3,6 @@ import os
 from ast import literal_eval
 from typing import Any, Dict, List, Tuple, Type, TypeVar, Union
 
-import cv2
-import numpy as np
 import torch
 import torch.nn.functional as F
 import triton_python_backend_utils as pb_utils
@@ -118,225 +116,90 @@ class EnvArgumentParser:
 
 
 class TritonPythonModel:
-    """
-    Triton Python model for image preprocessing.
-
-    This model handles image resizing operations in both CPU and GPU contexts,
-    supporting both PyTorch (GPU) and NumPy (CPU) processing paths.
-
-    Attributes:
-        logger: Triton logger instance for model-specific logging
-        model_name: Name of the model instance
-        inputs: List of input tensor names defined in model config
-        outputs: List of output tensor names defined in model config
-        cuda: Boolean flag indicating if model should use GPU processing
-        model_dims: Tuple of (height, width) for target image dimensions
-    """
-
     def initialize(self, args: Dict[str, Any]) -> None:
-        """
-        Initialize the model with configuration parameters.
-
-        This method is called once when the model loads. It sets up logging,
-        processes the model configuration, and loads environment variables.
-
-        Args:
-            args: Dictionary containing initialization parameters:
-                - model_name: Name of the model
-                - model_config: JSON string containing model configuration
-                    Must include:
-                    - inputs: List of input tensor specifications
-                    - outputs: List of output tensor specifications
-                    - instance_group: List of instance configurations
-                        including 'kind' field for GPU/CPU specification
-
-        Note:
-            Expects MODEL_DIMS environment variable to be set or uses
-            default value of (640, 640).
-        """
-
         self.logger = pb_utils.Logger
         self.model_name = args["model_name"]
         model_config = json.loads(args["model_config"])
-        self.inputs: List[str] = [
-            input["name"] for input in model_config["input"]
-        ]
-        self.outputs: List[str] = [
-            output["name"] for output in model_config["output"]
-        ]
-        self.cuda: bool = (
-            model_config["instance_group"][0]["kind"] == "KIND_GPU"
-        )
+        self.inputs: List[str] = [input["name"] for input in model_config["input"]]
+        self.outputs: List[str] = [output["name"] for output in model_config["output"]]
 
+        # Parse model dimensions
         load_dotenv()
         parser = EnvArgumentParser()
         parser.add_arg("MODEL_DIMS", default=(640, 640), type=tuple)
+        parser.add_arg("CAMERA_HEIGHT", default=720, type=int)
+        parser.add_arg("CAMERA_WIDTH", default=1280, type=int)
         args = parser.parse_args()
 
         self.model_dims: Tuple[int, int] = args.MODEL_DIMS
+        self.model_height = self.model_dims[0]
+        self.model_width = self.model_dims[1]
+        self.camera_height = args.CAMERA_HEIGHT
+        self.camera_width = args.CAMERA_WIDTH
 
-    def execute(
-        self, requests: List[InferenceRequest]
-    ) -> List[InferenceResponse]:
-        """
-        Execute preprocessing on a batch of requests.
+        self.device = torch.device("cuda")
+        self.register_gpu_constants()
 
-        This method handles the main inference logic, processing images either
-        through a CUDA-enabled PyTorch path or a CPU NumPy path based on the
-        initialization configuration.
+    def register_gpu_constants(self) -> None:
+        """Pre-compute and store all constants on GPU"""
+        h_ratio = self.model_height / self.camera_height
+        w_ratio = self.model_width / self.camera_width
+        self.scale = min(h_ratio, w_ratio)
 
-        Args:
-            requests: List of InferenceRequest objects, each containing:
-                - Input tensors accessible by name
-                - Other request-specific metadata
+        self.resize_height = int(round(self.camera_height * self.scale))
+        self.resize_width = int(round(self.camera_width * self.scale))
 
-        Returns:
-            List of InferenceResponse objects containing:
-                - Processed output tensors
-                - Any additional response metadata
+        pad_w = (self.model_width - self.resize_width) // 2
+        pad_h = (self.model_height - self.resize_height) // 2
 
-        Note:
-            Currently processes only the first request in the batch.
-            The processing path (CUDA/CPU) is determined by self.cuda flag.
-        """
+        self.padding = (
+            pad_w,
+            self.model_width - self.resize_width - pad_w,
+            pad_h,
+            self.model_height - self.resize_height - pad_h,
+        )
 
-        if self.cuda:
-            image = from_dlpack(
-                pb_utils.get_input_tensor_by_name(
-                    requests[0], self.inputs[0]
-                ).to_dlpack()
+        self.pad_value = torch.tensor([114 / 255], dtype=torch.float16).to(self.device)
+        self.flip_idx = torch.tensor([2, 1, 0]).to(self.device)
+        self.scale_factor = torch.tensor([1.0 / 255.0], dtype=torch.float16).to(
+            self.device
+        )
+
+    def execute(self, requests: List[InferenceRequest]) -> List[InferenceResponse]:
+        input_tensor = pb_utils.get_input_tensor_by_name(
+            requests[0], self.inputs[0]
+        ).as_numpy()
+        torch_tensor = torch.from_numpy(input_tensor).cuda()
+
+        with torch.amp.autocast("cuda", dtype=torch.float16):
+            resized_image = self._resize_image(torch_tensor)
+
+        return [
+            pb_utils.InferenceResponse(
+                output_tensors=[
+                    pb_utils.Tensor.from_dlpack(
+                        self.outputs[0], to_dlpack(resized_image)
+                    )
+                ]
             )
+        ]
 
-            resized_image = self._resize_image(image=image)
+    def _resize_image(self, image: torch.Tensor) -> torch.Tensor:
+        image = image.to(dtype=torch.float16).mul_(self.scale_factor)
 
-            outputs_tensors = [
-                pb_utils.Tensor.from_dlpack(
-                    self.outputs[0], to_dlpack(resized_image)
-                )
-            ]
+        image = image.permute(2, 0, 1).unsqueeze(0)
+        image = F.interpolate(
+            image,
+            size=(self.resize_height, self.resize_width),
+            mode="bilinear",
+            align_corners=False,
+        )
 
-        else:
-            image = pb_utils.get_input_tensor_by_name(
-                requests[0], self.inputs[0]
-            ).as_numpy()
+        image = F.pad(image, self.padding, mode="constant", value=self.pad_value.item())
 
-            resized_image = self._resize_image(image=image)
-
-            outputs_tensors = [pb_utils.Tensor(self.outputs[0], resized_image)]
-
-        return [pb_utils.InferenceResponse(output_tensors=outputs_tensors)]
+        return image[:, self.flip_idx].contiguous().half()
 
     def finalize(self) -> None:
-        """
-        Cleanup method called when the model is unloaded.
-
-        This method performs any necessary cleanup operations before the model
-        is unloaded from memory. Currently just logs the cleanup operation.
-        """
-
+        self.cached_tensors.clear()
+        torch.cuda.empty_cache()
         self.logger.log_info(f"Cleaning up {self.model_name}...")
-
-    def _resize_image(
-        self,
-        image: Union[torch.Tensor, np.ndarray],
-    ) -> Union[torch.Tensor, np.ndarray]:
-        """
-        Resize and pad an image to a target size while maintaining aspect ratio.
-
-        This function handles two specific cases:
-        1. PyTorch tensors in float16 with CUDA processing
-        2. NumPy arrays in float32 with CPU processing
-
-        Args:
-            image: Input image in one of two formats:
-                - PyTorch tensor (CHW) in torch.float16 when cuda_available=True
-                - NumPy array (HWC) in np.float32 when cuda_available=False
-
-        Returns:
-            Resized and padded image with an extra dimension added at axis 0:
-                - If self.cuda=True: torch.Tensor[float16] of shape (1, C, H, W)
-                - If self.cuda=False: np.ndarray[float32] of shape (1, C, H, W)
-            The output is normalized to [0, 1] range.
-
-        Raises:
-            TypeError: If input type doesn't match the processing mode:
-                - self.cuda=True requires torch.float16 input
-                - self.cuda=False requires np.float32 input
-
-        Note:
-            - When using CUDA, the image channels are flipped (RGB -> BGR or vice versa)
-            - The padding value is set to 114 (normalized to [0, 1] range)
-            - The aspect ratio is preserved during resizing
-        """
-
-        new_shape = self.model_dims
-
-        if self.cuda:
-            _, height, width = image.shape
-
-            r = min(new_shape[0] / height, new_shape[1] / width)
-            new_unpad = int(round(width * r)), int(round(height * r))
-
-            if (height, width) != new_unpad[::-1]:
-                image = F.interpolate(
-                    image.unsqueeze(0),
-                    size=new_unpad[::-1],
-                    mode="bilinear",
-                    align_corners=False,
-                ).squeeze(0)
-
-            dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
-            dw /= 2
-            dh /= 2
-
-            top = int(round(dh - 0.1))
-            bottom = int(round(dh + 0.1))
-            left = int(round(dw - 0.1))
-            right = int(round(dw + 0.1))
-
-            padding = (left, right, top, bottom)
-
-            image = F.pad(
-                image.unsqueeze(0), padding, mode="constant", value=114 / 255
-            ).squeeze(0)
-
-            image = torch.flip(image, [0])
-            image = image.unsqueeze(0)
-
-            return image
-
-        else:
-            shape = image.shape[:2]
-            r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-
-            new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-            dw, dh = (
-                new_shape[1] - new_unpad[0],
-                new_shape[0] - new_unpad[1],
-            )
-
-            dw /= 2
-            dh /= 2
-
-            if shape[::-1] != new_unpad:
-                image = cv2.resize(
-                    image, new_unpad, interpolation=cv2.INTER_LINEAR
-                )
-
-            top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-            left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-
-            pad_value = np.array([114, 114, 114], dtype=np.float32) / 255
-
-            image = cv2.copyMakeBorder(
-                image,
-                top,
-                bottom,
-                left,
-                right,
-                cv2.BORDER_CONSTANT,
-                value=tuple(pad_value),
-            )
-
-            image = image.transpose((2, 0, 1))[::-1]
-            return np.ascontiguousarray(image[None])

@@ -1,16 +1,48 @@
 #!/bin/bash
 
-if [ -z $CAMERA_AUDIO ]; then echo "The environment variable CAMERA_AUDIO is required. This is a boolean value True/False."; fi
-if [ -z $CAMERA_WIDTH ]; then echo "You did not define CAMERA_WIDTH. It will default to 1280." && CAMERA_WIDTH=1280; fi
-if [ -z $CAMERA_HEIGHT ]; then echo "You did not define CAMERA_HEIGHT. It will default to 720." && CAMERA_HEIGHT=720; fi
-if [ -z $CAMERA_INDEX ]; then echo "You did not define CAMERA_INDEX. This value is usually 0 unless you have other devices connected. It will default to 0." && CAMERA_INDEX=0; fi
-if [ -z $CAMERA_FPS ]; then echo "You did not define CAMERA_FPS. It will default to 30." && CAMERA_FPS=30; fi
-if [ -z $STREAM_IP ]; then echo "You did not define STREAM_IP. It will default to 127.0.0.1. This is the IP address where the RTMP stream will be sent." && STREAM_IP="127.0.0.1"; fi
-if [ -z $STREAM_PORT ]; then echo "You did not define STREAM_PORT. It will default to 1935." && STREAM_PORT=1935; fi
-if [ -z $STREAM_APPLICATION ]; then echo "You did not define STREAM_APPLICATION. It will default to 'live'. If you are using Nginx as the RTMP server, this has to match the application name in the config." && STREAM_APPLICATION="live"; fi
-if [ -z $STREAM_KEY ]; then echo "You did not define STREAM_KEY. It will default to 'stream'. If you are using HLS and a website to stream, this must match the name of your .m3u8 file." && STREAM_KEY="stream"; fi
+# Default configuration values
+declare -A defaults=(
+    [CAMERA_AUDIO]=""  # Required, no default
+    [CAMERA_WIDTH]="1280"
+    [CAMERA_HEIGHT]="720"
+    [CAMERA_INDEX]="0"
+    [CAMERA_FPS]="30"
+    [STREAM_IP]="127.0.0.1"
+    [STREAM_PORT]="1935"
+    [STREAM_APPLICATION]="live"
+    [STREAM_KEY]="stream"
+)
 
-DIMS="$CAMERA_WIDTH"x"$CAMERA_HEIGHT"
+check_env_var() {
+    local var_name=$1
+    local description=$2
+    
+    if [[ -z "${!var_name}" ]]; then
+        if [[ -z "${defaults[$var_name]}" ]]; then
+            echo "The environment variable $var_name is required. $description"
+            exit 1
+        else
+            echo "You did not define $var_name. $description It will default to ${defaults[$var_name]}."
+            eval "$var_name=${defaults[$var_name]}"
+        fi
+    fi
+}
+
+check_env_var "CAMERA_AUDIO" "This is a boolean value True/False."
+check_env_var "CAMERA_WIDTH" "This sets the video width."
+check_env_var "CAMERA_HEIGHT" "This sets the video height."
+check_env_var "CAMERA_INDEX" "This value is usually 0 unless you have other devices connected."
+check_env_var "CAMERA_FPS" "This sets the video framerate."
+check_env_var "STREAM_IP" "This is the IP address where the RTMP stream will be sent."
+check_env_var "STREAM_PORT" "This sets the RTMP port."
+check_env_var "STREAM_APPLICATION" "If you are using Nginx as the RTMP server, this has to match the application name in the config."
+check_env_var "STREAM_KEY" "If you are using HLS and a website to stream, this must match the name of your .m3u8 file."
+
+# Validate CAMERA_AUDIO value
+if [[ ! "${CAMERA_AUDIO}" =~ ^(True|False)$ ]]; then
+    echo "Invalid input for CAMERA_AUDIO. Expecting True or False; received ${CAMERA_AUDIO}."
+    exit 1
+fi
 
 # video only
 if [ "${CAMERA_AUDIO}" == "True" ]; then

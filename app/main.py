@@ -29,9 +29,7 @@ class EnvArgumentParser:
         __setattr__ = dict.__setitem__
         __delattr__ = dict.__delitem__
 
-    def add_arg(
-        self, variable: str, default: Any = None, d_type: Type = str
-    ) -> None:
+    def add_arg(self, variable: str, default: Any = None, d_type: Type = str) -> None:
         """
         Add an argument to be parsed from an environment variable.
 
@@ -40,6 +38,7 @@ class EnvArgumentParser:
             default (Any): The default value if the environment variable is not set.
             d_type (Type): The expected data type of the argument. Defaults to str.
         """
+
         env = os.environ.get(variable)
         if env is None:
             try:
@@ -50,9 +49,7 @@ class EnvArgumentParser:
                         f"The default value for {variable} cannot be cast to the data type provided."
                     )
             except TypeError:
-                raise TypeError(
-                    f"The type you provided for {variable} is not valid."
-                )
+                raise TypeError(f"The type you provided for {variable} is not valid.")
         else:
             if callable(d_type):
                 value = self._cast_type(env, d_type)
@@ -73,6 +70,7 @@ class EnvArgumentParser:
         Raises:
             ValueError: If the argument does not match the given data type or is not supported.
         """
+
         if d_type in [list, tuple, bool, dict]:
             try:
                 cast_value = literal_eval(arg)
@@ -111,6 +109,7 @@ class EnvArgumentParser:
         Returns:
             _define_dict: A custom dictionary containing the parsed arguments.
         """
+
         return self._define_dict(self.dict)
 
 
@@ -143,6 +142,8 @@ class TritonClient:
             model (str): The name of the model to be used for inference.
         """
 
+        self.model_name: str = model
+
         parsed_url = urlparse(url)
         if parsed_url.scheme == "grpc":
             from tritonclient.grpc import InferenceServerClient, InferInput
@@ -150,7 +151,6 @@ class TritonClient:
             self.client: InferenceServerClient = InferenceServerClient(
                 parsed_url.netloc
             )
-            self.model_name: str = model
             self.metadata: dict = self.client.get_model_metadata(
                 self.model_name, as_json=True
             )
@@ -160,9 +160,7 @@ class TritonClient:
 
             def create_input_placeholders() -> List[InferInput]:
                 return [
-                    InferInput(
-                        i["name"], [int(s) for s in i["shape"]], i["datatype"]
-                    )
+                    InferInput(i["name"], [int(s) for s in i["shape"]], i["datatype"])
                     for i in self.metadata["inputs"]
                 ]
 
@@ -172,17 +170,12 @@ class TritonClient:
             self.client: InferenceServerClient = InferenceServerClient(
                 parsed_url.netloc
             )
-            self.model_name: str = model
-            self.metadata: dict = self.client.get_model_metadata(
-                self.model_name
-            )
+            self.metadata: dict = self.client.get_model_metadata(self.model_name)
             self.config: dict = self.client.get_model_config(self.model_name)
 
             def create_input_placeholders() -> List[InferInput]:
                 return [
-                    InferInput(
-                        i["name"], [int(s) for s in i["shape"]], i["datatype"]
-                    )
+                    InferInput(i["name"], [int(s) for s in i["shape"]], i["datatype"])
                     for i in self.metadata["inputs"]
                 ]
 
@@ -190,6 +183,7 @@ class TritonClient:
             raise RuntimeError("Unsupported protocol. Use HTTP or GRPC.")
 
         self._create_input_placeholders_fn = create_input_placeholders
+        self.output_name: str = self.metadata["outputs"][0]["name"]
         self.model_dims: Tuple[int, int] = self._get_dims()
         self.classes: Optional[List[str]] = self._get_classes()
 
@@ -209,17 +203,13 @@ class TritonClient:
 
         inputs = self._create_inputs(*args)
         response = self.client.infer(model_name=self.model_name, inputs=inputs)
-        result: List[torch.Tensor] = []
-        for output in self.metadata["outputs"]:
-            tensor = from_dlpack(
-                response.get_tensor(output["name"]).to_dlpack()
-            )
-            result.append(tensor)
+        prediction = from_dlpack(
+            response.get_tensor(self.output_name).to_dlpack()
+        ).tolist()[0]
 
-        predictions = result[0].tolist()
-        bboxes = [item[:4] for item in predictions]
-        confs = [round(float(item[4]), 2) for item in predictions]
-        indexes = [int(item[5]) for item in predictions]
+        bboxes = prediction[:4]
+        confs = round(float(prediction[4]), 2)
+        indexes = int(prediction[5])
 
         return bboxes, confs, indexes
 
@@ -260,10 +250,9 @@ class TritonClient:
         Returns:
             Optional[List[str]]: The list of class labels, or None if not available.
         """
+
         label_filename = self.config["output"][0]["label_filename"]
-        docker_file_path = (
-            f"/root/app/triton/{self.model_name}/{label_filename}"
-        )
+        docker_file_path = f"/root/app/triton/{self.model_name}/{label_filename}"
         local_file_path = os.path.join(
             os.path.abspath(os.getcwd()),
             f"triton/{self.model_name}/{label_filename}",
@@ -287,10 +276,11 @@ class TritonClient:
         Returns:
             Tuple[int, int]: The dimensions of the model input.
         """
+
         try:
             model_dims = tuple(self.config["input"][0]["dims"][2:4])
             return tuple(map(int, model_dims))
-        except:
+        except Exception:
             return (640, 640)
 
 
@@ -411,15 +401,11 @@ class Annotator:
 
         resize_width = bbox[2] - bbox[0]
         santa_hat = imutils.resize(self.santa_hat.copy(), width=resize_width)
-        santa_hat_mask = imutils.resize(
-            self.santa_hat_mask.copy(), width=resize_width
-        )
+        santa_hat_mask = imutils.resize(self.santa_hat_mask.copy(), width=resize_width)
         hat_height, hat_width = santa_hat.shape[0], santa_hat.shape[1]
 
         mask_boolean = santa_hat_mask[:, :, 0] == 0
-        mask_rgb_boolean = np.stack(
-            [mask_boolean, mask_boolean, mask_boolean], axis=2
-        )
+        mask_rgb_boolean = np.stack([mask_boolean, mask_boolean, mask_boolean], axis=2)
 
         if x >= 0 and y >= 0:
             h = hat_height - max(0, y + hat_height - self.height)
@@ -448,9 +434,7 @@ class Annotator:
             frame[y : y + h, 0 : 0 + w, :] = (
                 frame[y : y + h, 0 : 0 + w, :]
                 * ~mask_rgb_boolean[0:h, hat_width - w : hat_width, :]
-                + (santa_hat * mask_rgb_boolean)[
-                    0:h, hat_width - w : hat_width, :
-                ]
+                + (santa_hat * mask_rgb_boolean)[0:h, hat_width - w : hat_width, :]
             )
 
         elif x >= 0 and y < 0:
@@ -459,9 +443,7 @@ class Annotator:
             frame[0 : 0 + h, x : x + w, :] = (
                 frame[0 : 0 + h, x : x + w, :]
                 * ~mask_rgb_boolean[hat_height - h : hat_height, 0:w, :]
-                + (santa_hat * mask_rgb_boolean)[
-                    hat_height - h : hat_height, 0:w, :
-                ]
+                + (santa_hat * mask_rgb_boolean)[hat_height - h : hat_height, 0:w, :]
             )
 
         return frame
@@ -535,9 +517,7 @@ def main(
 
     model = TritonClient(triton_url, model_name)
 
-    annotator = Annotator(
-        model.classes, camera_width, camera_height, santa_hat_plugin
-    )
+    annotator = Annotator(model.classes, camera_width, camera_height, santa_hat_plugin)
 
     period = 2
     tracking_index = 0

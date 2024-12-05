@@ -2,31 +2,30 @@
 
 source .env
 
-if [[ -z "${DOCKER_USERNAME}" ]]; then
-    echo "Set your DOCKER_USERNAME in your .env file"
-    exit 1
-fi
+for var in DOCKER_USERNAME DOCKER_PASSWORD LATEST_VERSION; do
+    if [[ -z "${!var}" ]]; then
+        echo "Set ${var} in your .env file"
+        exit 1
+    fi
+done
 
-if [[ -z "${DOCKER_PASSWORD}" ]]; then
-    echo "Set your DOCKER_PASSWORD in your .env file"
-    exit 1
-fi
-
-if [[ -z "${LATEST_VERSION}" ]]; then
-    echo "Set the LATEST_VERSION in your .env file"
-    exit 1
-fi
 
 docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
-docker images -q rcland12/detection-stream:linux-latest | xargs -I{} docker tag {} rcland12/detection-stream:linux-${LATEST_VERSION}
-docker images -q rcland12/detection-stream:linux-triton-latest | xargs -I{} docker tag {} rcland12/detection-stream:linux-triton-${LATEST_VERSION}
-docker images -q rcland12/detection-stream:nginx-latest | xargs -I{} docker tag {} rcland12/detection-stream:nginx-${LATEST_VERSION}
-docker push rcland12/detection-stream:linux-${LATEST_VERSION}
-docker push rcland12/detection-stream:linux-triton-${LATEST_VERSION}
-docker push rcland12/detection-stream:nginx-${LATEST_VERSION}
-docker rmi -f rcland12/detection-stream:linux-${LATEST_VERSION}
-docker rmi -f rcland12/detection-stream:linux-triton-${LATEST_VERSION}
-docker rmi -f rcland12/detection-stream:nginx-${LATEST_VERSION}
-docker push rcland12/detection-stream:linux-latest
-docker push rcland12/detection-stream:linux-triton-latest
-docker push rcland12/detection-stream:nginx-latest
+
+REPO="rcland12/detection-stream"
+VARIANTS=("linux" "linux-triton" "nginx")
+
+process_image() {
+    local variant=$1
+    local latest_tag="${REPO}:${variant}-latest"
+    local version_tag="${REPO}:${variant}-${LATEST_VERSION}"
+    
+    docker images -q ${latest_tag} | xargs -I{} docker tag {} ${version_tag}
+    docker push ${version_tag}
+    docker push ${latest_tag}
+    docker rmi -f ${version_tag}
+}
+
+for variant in "${VARIANTS[@]}"; do
+    process_image ${variant}
+done

@@ -1,4 +1,4 @@
-name: "yolov8"
+name: "ensemble"
 platform: "ensemble"
 max_batch_size: 0
 
@@ -38,7 +38,7 @@ ensemble_scheduling {
       model_version: -1
       input_map {
         key: "images"
-        value: "resized_frame"
+        value: "resized_image"
       }
       output_map {
         key: "output0"
