@@ -9,7 +9,6 @@ import imutils
 import numpy as np
 import torch
 from dotenv import load_dotenv
-from torch.utils.dlpack import from_dlpack
 
 
 class EnvArgumentParser:

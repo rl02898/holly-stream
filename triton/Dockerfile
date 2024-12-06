@@ -45,13 +45,14 @@ RUN userdel tensorrt-server > /dev/null 2>&1 || true && \
     apt-get update && apt-get install -y --no-install-recommends \
         python3 libarchive-dev python3-pip libpython3-dev
 
-WORKDIR /opt/tritonserver
-COPY ./requirements.txt ./
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir --upgrade wheel setuptools && \
+    pip3 install --no-cache-dir torch torchvision && \
+    pip3 install --no-cache-dir python-dotenv opencv-python && \
     rm -rf /var/lib/apt/lists/* && \
     rm -fr /opt/tritonserver/*
 
+WORKDIR /opt/tritonserver
 COPY --chown=1000:1000 --from=full /opt/tritonserver/bin bin/
 COPY --chown=1000:1000 --from=full /opt/tritonserver/lib lib/
 COPY --chown=1000:1000 --from=full /opt/tritonserver/include include/
@@ -60,7 +61,7 @@ COPY --chown=1000:1000 --from=full /opt/tritonserver/backends/tensorrt /opt/trit
 COPY --chown=1000:1000 --from=full /opt/tritonserver/repoagents/checksum /opt/tritonserver/repoagents/checksum
 COPY --chown=1000:1000 --from=full /usr/bin/serve /usr/bin/.
 
-RUN chown triton-server:triton-server /opt/tritonserver/backends
-RUN chown triton-server:triton-server /opt/tritonserver/repoagents
+RUN chown triton-server:triton-server /opt/tritonserver/backends && \
+    chown triton-server:triton-server /opt/tritonserver/repoagents
 
 CMD ["/bin/sh", "-c", "tritonserver --model-repository=${MODEL_REPOSITORY} --allow-metrics=false"]

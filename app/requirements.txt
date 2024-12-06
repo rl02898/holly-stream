@@ -1,4 +1,0 @@
-opencv-python
-imutils
-python-dotenv
-tritonclient[all]
