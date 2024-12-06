@@ -10,5 +10,5 @@ RUN apt-get update && \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY main.py stream.sh entrypoint.sh ./
-COPY ./images/ ./images/
+COPY ./images/santa*.png ./images/
 CMD ["/bin/bash", "entrypoint.sh"]
