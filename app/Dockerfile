@@ -21,6 +21,6 @@ RUN apt-get update && \
         tritonclient[all]
 
 COPY main.py stream.sh entrypoint.sh ./
-COPY ./images/santa*.png ./images/
+COPY ./images/ ./images/
 
 CMD ["/bin/bash", "entrypoint.sh"]

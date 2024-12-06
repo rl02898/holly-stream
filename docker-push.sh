@@ -9,23 +9,16 @@ for var in DOCKER_USERNAME DOCKER_PASSWORD LATEST_VERSION; do
     fi
 done
 
-
 docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
-
-REPO="rcland12/detection-stream"
-VARIANTS=("linux" "linux-triton" "nginx")
-
-process_image() {
-    local variant=$1
-    local latest_tag="${REPO}:${variant}-latest"
-    local version_tag="${REPO}:${variant}-${LATEST_VERSION}"
-    
-    docker images -q ${latest_tag} | xargs -I{} docker tag {} ${version_tag}
-    docker push ${version_tag}
-    docker push ${latest_tag}
-    docker rmi -f ${version_tag}
-}
-
-for variant in "${VARIANTS[@]}"; do
-    process_image ${variant}
-done
+docker images -q rcland12/detection-stream:linux-latest | xargs -I{} docker tag {} rcland12/detection-stream:linux-${LATEST_VERSION}
+docker images -q rcland12/detection-stream:linux-triton-latest | xargs -I{} docker tag {} rcland12/detection-stream:linux-triton-${LATEST_VERSION}
+docker images -q rcland12/detection-stream:nginx-latest | xargs -I{} docker tag {} rcland12/detection-stream:nginx-${LATEST_VERSION}
+docker push rcland12/detection-stream:linux-${LATEST_VERSION}
+docker push rcland12/detection-stream:linux-triton-${LATEST_VERSION}
+docker push rcland12/detection-stream:nginx-${LATEST_VERSION}
+docker rmi -f rcland12/detection-stream:linux-${LATEST_VERSION}
+docker rmi -f rcland12/detection-stream:linux-triton-${LATEST_VERSION}
+docker rmi -f rcland12/detection-stream:nginx-${LATEST_VERSION}
+docker push rcland12/detection-stream:linux-latest
+docker push rcland12/detection-stream:linux-triton-latest
+docker push rcland12/detection-stream:nginx-latest
