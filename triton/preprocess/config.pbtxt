@@ -26,6 +26,17 @@ instance_group [
   }
 ]
 
+parameters [
+  {
+    key: "CUDA_VISIBLE_DEVICES"
+    value: { string_value: "0" }
+  },
+  {
+    key: "use_cuda_shared_memory"
+    value: { string_value: "true" }
+  }
+]
+
 version_policy: { 
   latest: { num_versions: 1 }
 }

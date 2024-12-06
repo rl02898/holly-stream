@@ -26,10 +26,20 @@ instance_group [
   }
 ]
 
-parameters [{
-  key: "CUDA_VISIBLE_DEVICES"
-  value: { string_value: "0" }
-}]
+parameters [
+  {
+    key: "CUDA_VISIBLE_DEVICES"
+    value: { string_value: "0" }
+  },
+  {
+    key: "use_cuda_shared_memory"
+    value: { string_value: "true" }
+  },
+  {
+    key: "FORCE_CPU_ONLY_INPUT_TENSORS"
+    value: { string_value: "no" }
+  }
+]
 
 optimization {
   execution_accelerators {

@@ -3,12 +3,13 @@ import os
 from ast import literal_eval
 from typing import Any, Dict, List, Tuple, Type, TypeVar, Union
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import triton_python_backend_utils as pb_utils
 from c_python_backend_utils import InferenceRequest, InferenceResponse
 from dotenv import load_dotenv
-from torch.utils.dlpack import from_dlpack, to_dlpack
+from torch.utils.dlpack import to_dlpack
 
 T = TypeVar("T")
 
@@ -116,14 +117,30 @@ class EnvArgumentParser:
 
 
 class TritonPythonModel:
+    """
+    A Triton inference model that processes images with GPU acceleration.
+
+    This model handles image resizing and padding operations for inference,
+    maintaining consistent GPU memory usage and optimized performance through
+    pre-computed constants and GPU-based operations.
+    """
+
     def initialize(self, args: Dict[str, Any]) -> None:
+        """
+        Initialize the model with configuration parameters and set up GPU constants.
+
+        Args:
+            args: Dictionary containing model initialization parameters including:
+                - model_name: Name of the model
+                - model_config: JSON string containing model input/output configuration
+        """
+
         self.logger = pb_utils.Logger
         self.model_name = args["model_name"]
         model_config = json.loads(args["model_config"])
         self.inputs: List[str] = [input["name"] for input in model_config["input"]]
         self.outputs: List[str] = [output["name"] for output in model_config["output"]]
 
-        # Parse model dimensions
         load_dotenv()
         parser = EnvArgumentParser()
         parser.add_arg("MODEL_DIMS", default=(640, 640), type=tuple)
@@ -132,47 +149,66 @@ class TritonPythonModel:
         args = parser.parse_args()
 
         self.model_dims: Tuple[int, int] = args.MODEL_DIMS
-        self.model_height = self.model_dims[0]
-        self.model_width = self.model_dims[1]
-        self.camera_height = args.CAMERA_HEIGHT
-        self.camera_width = args.CAMERA_WIDTH
+        self.model_height: int = self.model_dims[0]
+        self.model_width: int = self.model_dims[1]
+        self.camera_height: int = args.CAMERA_HEIGHT
+        self.camera_width: int = args.CAMERA_WIDTH
 
-        self.device = torch.device("cuda")
+        self.device: torch.device = torch.device("cuda")
         self.register_gpu_constants()
 
     def register_gpu_constants(self) -> None:
-        """Pre-compute and store all constants on GPU"""
-        h_ratio = self.model_height / self.camera_height
-        w_ratio = self.model_width / self.camera_width
-        self.scale = min(h_ratio, w_ratio)
+        """
+        Pre-compute and store all constants on GPU for efficient processing.
 
-        self.resize_height = int(round(self.camera_height * self.scale))
-        self.resize_width = int(round(self.camera_width * self.scale))
+        Calculates scaling factors, padding values, and other constants needed
+        for image processing and stores them on the GPU to minimize CPU-GPU
+        transfers during inference.
+        """
 
-        pad_w = (self.model_width - self.resize_width) // 2
-        pad_h = (self.model_height - self.resize_height) // 2
+        h_ratio: float = self.model_height / self.camera_height
+        w_ratio: float = self.model_width / self.camera_width
+        self.scale: float = min(h_ratio, w_ratio)
 
-        self.padding = (
+        self.resize_height: int = int(round(self.camera_height * self.scale))
+        self.resize_width: int = int(round(self.camera_width * self.scale))
+
+        pad_w: int = (self.model_width - self.resize_width) // 2
+        pad_h: int = (self.model_height - self.resize_height) // 2
+
+        self.padding: Tuple[int, int, int, int] = (
             pad_w,
             self.model_width - self.resize_width - pad_w,
             pad_h,
             self.model_height - self.resize_height - pad_h,
         )
 
-        self.pad_value = torch.tensor([114 / 255], dtype=torch.float16).to(self.device)
-        self.flip_idx = torch.tensor([2, 1, 0]).to(self.device)
-        self.scale_factor = torch.tensor([1.0 / 255.0], dtype=torch.float16).to(
-            self.device
-        )
+        self.pad_value: torch.Tensor = torch.tensor(
+            [114 / 255], dtype=torch.float16
+        ).to(self.device)
+        self.flip_idx: torch.Tensor = torch.tensor([2, 1, 0]).to(self.device)
+        self.scale_factor: torch.Tensor = torch.tensor(
+            [1.0 / 255.0], dtype=torch.float16
+        ).to(self.device)
 
     def execute(self, requests: List[InferenceRequest]) -> List[InferenceResponse]:
-        input_tensor = pb_utils.get_input_tensor_by_name(
+        """
+        Execute inference on the input requests.
+
+        Args:
+            requests: List of inference requests containing input tensors
+
+        Returns:
+            List of inference responses containing processed output tensors
+        """
+
+        input_tensor: np.ndarray = pb_utils.get_input_tensor_by_name(
             requests[0], self.inputs[0]
         ).as_numpy()
-        torch_tensor = torch.from_numpy(input_tensor).cuda()
+        torch_tensor: torch.Tensor = torch.from_numpy(input_tensor).cuda()
 
         with torch.amp.autocast("cuda", dtype=torch.float16):
-            resized_image = self._resize_image(torch_tensor)
+            resized_image: torch.Tensor = self._resize_image(torch_tensor)
 
         return [
             pb_utils.InferenceResponse(
@@ -185,6 +221,16 @@ class TritonPythonModel:
         ]
 
     def _resize_image(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Resize and process input image tensor.
+
+        Args:
+            image: Input image tensor to be processed
+
+        Returns:
+            Processed image tensor with appropriate sizing and channel ordering
+        """
+
         image = image.to(dtype=torch.float16).mul_(self.scale_factor)
 
         image = image.permute(2, 0, 1).unsqueeze(0)
@@ -200,6 +246,11 @@ class TritonPythonModel:
         return image[:, self.flip_idx].contiguous().half()
 
     def finalize(self) -> None:
-        self.cached_tensors.clear()
+        """
+        Clean up resources when the model is being unloaded.
+
+        Frees GPU memory and logs cleanup information.
+        """
+
         torch.cuda.empty_cache()
         self.logger.log_info(f"Cleaning up {self.model_name}...")

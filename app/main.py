@@ -203,13 +203,11 @@ class TritonClient:
 
         inputs = self._create_inputs(*args)
         response = self.client.infer(model_name=self.model_name, inputs=inputs)
-        prediction = from_dlpack(
-            response.get_tensor(self.output_name).to_dlpack()
-        ).tolist()[0]
+        predictions = response.as_numpy(self.output_name).tolist()
 
-        bboxes = prediction[:4]
-        confs = round(float(prediction[4]), 2)
-        indexes = int(prediction[5])
+        bboxes = [item[:4] for item in predictions]
+        confs = [round(float(item[4]), 2) for item in predictions]
+        indexes = [int(item[5]) for item in predictions]
 
         return bboxes, confs, indexes
 
@@ -325,8 +323,8 @@ class Annotator:
         self.height = height
         self.classes = classes
         self.colors = list(np.random.rand(len(self.classes), 3) * 255)
-        self.santa_hat = cv2.imread("images/santa_hat.png")
-        self.santa_hat_mask = cv2.imread("images/santa_hat_mask.png")
+        self.santa_hat = cv2.imread("./images/santa_hat.png")
+        self.santa_hat_mask = cv2.imread("./images/santa_hat_mask.png")
         self.santa_hat_plugin = santa_hat_plugin
 
     def __call__(
@@ -550,7 +548,7 @@ def main(
 if __name__ == "__main__":
     load_dotenv()
     parser = EnvArgumentParser()
-    parser.add_arg("TRITON_URL", default="grpc://localhost:8001", d_type=str)
+    parser.add_arg("TRITON_URL", default="http://localhost:8000", d_type=str)
     parser.add_arg("MODEL_NAME", default="yolov8n", d_type=str)
     parser.add_arg("STREAM_IP", default="127.0.0.1", d_type=str)
     parser.add_arg("STREAM_PORT", default=1935, d_type=int)

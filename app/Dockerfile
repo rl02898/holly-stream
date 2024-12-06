@@ -9,5 +9,6 @@ RUN apt-get update && \
     torch --index-url https://download.pytorch.org/whl/cpu && \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
-COPY main.py stream.sh entrypoint.sh images/ ./
+COPY main.py stream.sh entrypoint.sh ./
+COPY ./images/ ./images/
 CMD ["/bin/bash", "entrypoint.sh"]

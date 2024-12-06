@@ -1,6 +1,7 @@
 services:
   triton:
     image: rcland12/detection-stream:linux-triton-latest
+    container_name: triton
     build:
       context: ./triton
     network_mode: host
@@ -23,6 +24,7 @@ services:
 
   app:
     image: rcland12/detection-stream:linux-latest
+    container_name: app
     build:
       context: ./app
     network_mode: host

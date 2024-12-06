@@ -1,7 +1,7 @@
 import json
 import os
 from ast import literal_eval
-from typing import Any, Dict, List, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 import triton_python_backend_utils as pb_utils
@@ -116,9 +116,26 @@ class EnvArgumentParser:
 
 
 class TritonPythonModel:
+    """
+    A Triton inference model that processes object detection outputs with non-maximum suppression.
+
+    This model handles post-processing of detection outputs, including confidence filtering,
+    non-maximum suppression (NMS), box format conversion, and optional normalization for
+    specific plugins (e.g., santa hat detection).
+    """
+
     def initialize(self, args: Dict[str, Any]) -> None:
+        """
+        Initialize the model with configuration parameters and setup constants.
+
+        Args:
+            args: Dictionary containing model initialization parameters including:
+                - model_name: Name of the model
+                - model_config: JSON string containing model input/output configuration
+        """
+
         self.logger = pb_utils.Logger
-        self.model_name = args["model_name"]
+        self.model_name: str = args["model_name"]
         model_config = json.loads(args["model_config"])
         self.inputs: List[str] = [input["name"] for input in model_config["input"]]
         self.outputs: List[str] = [output["name"] for output in model_config["output"]]
@@ -134,35 +151,40 @@ class TritonPythonModel:
         parser.add_arg("SANTA_HAT_PLUGIN", default=False, type=bool)
         args = parser.parse_args()
 
-        # Store configuration
-        self.camera_width = args.CAMERA_WIDTH
-        self.camera_height = args.CAMERA_HEIGHT
-        self.model_dims = args.MODEL_DIMS
-        self.conf_thres = args.CONFIDENCE_THRESHOLD
-        self.iou_thres = args.IOU_THRESHOLD
-        self.classes = args.CLASSES
-        self.santa_hat_plugin = args.SANTA_HAT_PLUGIN
+        self.camera_width: int = args.CAMERA_WIDTH
+        self.camera_height: int = args.CAMERA_HEIGHT
+        self.model_dims: Tuple[int, int] = args.MODEL_DIMS
+        self.conf_thres: float = args.CONFIDENCE_THRESHOLD
+        self.iou_thres: float = args.IOU_THRESHOLD
+        self.classes: Optional[List[int]] = args.CLASSES
+        self.santa_hat_plugin: bool = args.SANTA_HAT_PLUGIN
 
-        # Precalculate constants
+        self.device: torch.device = torch.device("cuda")
         self._initialize_constants()
 
-    def _initialize_constants(self):
-        """Precalculate constants used in processing"""
-        self.img0_shape = (self.camera_width, self.camera_height)
-        self.gain = min(
+    def _initialize_constants(self) -> None:
+        """
+        Precalculate constants used in detection post-processing.
+
+        Initializes image shape, scaling factors, padding values, and normalization
+        matrices (if santa hat plugin is enabled) on the GPU for efficient processing.
+        """
+
+        self.img0_shape: Tuple[int, int] = (self.camera_width, self.camera_height)
+        self.gain: float = min(
             self.model_dims[0] / self.img0_shape[1],
             self.model_dims[1] / self.img0_shape[0],
         )
-        self.pad = torch.tensor(
+        self.pad: torch.Tensor = torch.tensor(
             [
                 (self.model_dims[1] - self.img0_shape[0] * self.gain) / 2,
                 (self.model_dims[0] - self.img0_shape[1] * self.gain) / 2,
             ],
-            device="cuda",
+            device=self.device,
         )
 
         if self.santa_hat_plugin:
-            self.normalize_matrix = torch.diag(
+            self.normalize_matrix: torch.Tensor = torch.diag(
                 torch.tensor(
                     [
                         1 / self.img0_shape[0],
@@ -170,18 +192,31 @@ class TritonPythonModel:
                         1 / self.img0_shape[0],
                         1 / self.img0_shape[1],
                     ],
-                    device="cuda",
+                    device=self.device,
                 )
             )
 
     def execute(self, requests: List[InferenceRequest]) -> List[InferenceResponse]:
-        with torch.cuda.amp.autocast(dtype=torch.float16):
-            detections = from_dlpack(
+        """
+        Execute inference post-processing on the input detection tensors.
+
+        Args:
+            requests: List of inference requests containing detection tensors
+
+        Returns:
+            List of inference responses containing processed bounding boxes
+        """
+
+        with torch.amp.autocast("cuda", dtype=torch.float16):
+            detections: torch.Tensor = from_dlpack(
                 pb_utils.get_input_tensor_by_name(
                     requests[0], self.inputs[0]
                 ).to_dlpack()
             )
-            bounding_boxes = self.non_max_suppression(detections=detections)
+
+            bounding_boxes: torch.Tensor = self.non_max_suppression(
+                detections=detections
+            )
 
         outputs_tensors = [
             pb_utils.Tensor.from_dlpack(self.outputs[0], to_dlpack(bounding_boxes))
@@ -189,68 +224,75 @@ class TritonPythonModel:
         return [pb_utils.InferenceResponse(output_tensors=outputs_tensors)]
 
     def non_max_suppression(self, detections: torch.Tensor) -> torch.Tensor:
-        bs = detections.shape[0]
-        nc = detections.shape[1] - 4
-        nm = detections.shape[1] - nc - 4
-        mi = 4 + nc
+        """
+        Apply non-maximum suppression to raw detection outputs.
 
-        # Filter by confidence
+        Args:
+            detections: Raw detection tensor of shape (batch_size, num_classes + 4 + num_masks)
+                       where 4 represents the box coordinates (x, y, w, h)
+
+        Returns:
+            Processed tensor containing filtered and NMS-applied detections with
+            normalized coordinates if santa hat plugin is enabled
+        """
+
+        bs: int = detections.shape[0]
+        nc: int = detections.shape[1] - 4
+        nm: int = detections.shape[1] - nc - 4
+        mi: int = 4 + nc
+
         xc = detections[:, 4:mi].amax(1) > self.conf_thres
 
-        # Convert boxes to xyxy format
         detections = detections.transpose(-1, -2)
         detections[..., :4] = self._xywh2xyxy(detections[..., :4])
 
-        output = [torch.zeros((0, 6 + nm), device=detections.device)] * bs
+        output: List[torch.Tensor] = [
+            torch.zeros((0, 6 + nm), device=detections.device)
+        ] * bs
 
         for xi, x in enumerate(detections):
-            # Apply confidence threshold
             x = x[xc[xi]]
             if not x.shape[0]:
                 continue
 
-            # Split predictions
+            box: torch.Tensor
+            cls: torch.Tensor
+            mask: torch.Tensor
             box, cls, mask = x.split((4, nc, nm), 1)
 
-            # Get maximum confidence and class
+            conf: torch.Tensor
+            j: torch.Tensor
             conf, j = cls.max(1, keepdim=True)
             x = torch.cat((box, conf, j.float(), mask), 1)[
                 conf.view(-1) > self.conf_thres
             ]
 
-            # Filter by class
             if self.classes is not None:
                 x = x[(x[:, 5:6] == torch.tensor(self.classes, device=x.device)).any(1)]
 
-            n = x.shape[0]
+            n: int = x.shape[0]
             if not n:
                 continue
 
-            # Limit boxes if too many
             if n > 30000:
                 x = x[x[:, 4].argsort(descending=True)[:30000]]
 
-            # Apply NMS
-            boxes = x[:, :4] + x[:, 5:6] * 7680
-            keep = nms(boxes, x[:, 4], self.iou_thres)
+            boxes: torch.Tensor = x[:, :4] + x[:, 5:6] * 7680
+            keep: torch.Tensor = nms(boxes, x[:, 4], self.iou_thres)
             keep = keep[:300]
             output[xi] = x[keep]
 
-        # Process output
         output = output[0]
         if output.shape[0] == 0:
             return output
 
-        # Scale boxes back to original size
         output[:, [0, 2]] -= self.pad[0]
         output[:, [1, 3]] -= self.pad[1]
         output[:, :4] /= self.gain
 
-        # Clip boxes to image bounds
         output[..., [0, 2]] = output[..., [0, 2]].clamp_(0, self.img0_shape[0])
         output[..., [1, 3]] = output[..., [1, 3]].clamp_(0, self.img0_shape[1])
 
-        # Normalize if needed
         if self.santa_hat_plugin:
             output[..., :4] = torch.mm(output[..., :4], self.normalize_matrix)
 
@@ -258,6 +300,16 @@ class TritonPythonModel:
 
     @staticmethod
     def _xywh2xyxy(x: torch.Tensor) -> torch.Tensor:
+        """
+        Convert bounding box coordinates from (x, y, width, height) to (x1, y1, x2, y2) format.
+
+        Args:
+            x: Input tensor containing boxes in (x, y, width, height) format
+
+        Returns:
+            Tensor containing boxes in (x1, y1, x2, y2) format
+        """
+
         y = x.clone()
         y[..., 0] = x[..., 0] - x[..., 2] / 2
         y[..., 1] = x[..., 1] - x[..., 3] / 2
@@ -266,5 +318,11 @@ class TritonPythonModel:
         return y
 
     def finalize(self) -> None:
+        """
+        Clean up resources when the model is being unloaded.
+
+        Frees GPU memory and logs cleanup information.
+        """
+
         torch.cuda.empty_cache()
         self.logger.log_info(f"Cleaning up {self.model_name}...")
