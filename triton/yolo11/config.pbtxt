@@ -1,4 +1,4 @@
-name: "ensemble"
+name: "yolo11"
 platform: "ensemble"
 max_batch_size: 0
 
