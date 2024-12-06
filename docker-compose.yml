@@ -18,8 +18,8 @@ services:
               capabilities: [gpu]
     healthcheck:
       test: [ "CMD", "curl", "-i", "-X", "GET", "http://localhost:8000/v2/health/ready" ]
-      interval: 10s
-      timeout: 20s
+      interval: 5s
+      timeout: 10s
       retries: 6
 
   app:
@@ -42,7 +42,7 @@ services:
       context: ./nginx
     network_mode: host
     volumes:
-      - ${PWD}/nginx/nginx-stream/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/nginx-stream/nginx.conf:/etc/nginx/nginx.conf
 
   nginx-web:
     image: rcland12/detection-stream:nginx-latest

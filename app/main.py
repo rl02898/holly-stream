@@ -1,13 +1,12 @@
 import os
 import subprocess
 from ast import literal_eval
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type
 from urllib.parse import urlparse
 
 import cv2
 import imutils
 import numpy as np
-import torch
 from dotenv import load_dotenv
 
 
@@ -186,15 +185,19 @@ class TritonClient:
         self.model_dims: Tuple[int, int] = self._get_dims()
         self.classes: Optional[List[str]] = self._get_classes()
 
-    def __call__(self, *args) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    def __call__(self, *args: Any) -> Tuple[List[List[float]], List[float], List[int]]:
         """
-        Perform inference on the provided inputs.
+        Perform inference on the provided inputs and return bounding boxes, confidence scores, and class indexes.
 
         Args:
-            *args: The input arguments for the model.
+            *args: Input arguments for the model. Expected format depends on the model configuration
+                and should be compatible with self._create_inputs().
 
         Returns:
-            Union[torch.Tensor, Tuple[torch.Tensor, ...]]: The inference results.
+            Tuple containing:
+                - List[List[float]]: Bounding boxes, where each box is [x1, y1, x2, y2]
+                - List[float]: Confidence scores rounded to 2 decimal places
+                - List[int]: Class indexes
 
         Raises:
             RuntimeError: If no inputs are provided or if the number of inputs does not match the expected number.
