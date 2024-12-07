@@ -1,20 +1,41 @@
-FROM ubuntu:20.04
+FROM ubuntu:20.04 AS builder
+
 ARG APPDIR=/root/app
+ARG NGINX_VERSION=1.19.0
 ARG NGINX_USER=www-data
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && \
-    apt dist-upgrade -y && \
-    DEBIAN_FRONTEND=noninteractive apt install -y \
-    build-essential git wget ffmpeg libpcre3 libpcre3-dev \
-    libssl-dev zlib1g-dev perl libperl-dev \
-    libgd3 libgd-dev libgeoip1 libgeoip-dev geoip-bin \
-    libxml2 libxml2-dev libxslt1.1 libxslt1-dev ffmpeg
+    apt-get dist-upgrade -y && \
+    apt-get install -y \
+    build-essential \
+    git \
+    wget \
+    ffmpeg \
+    libpcre3 \
+    libpcre3-dev \
+    libssl-dev \
+    zlib1g-dev \
+    perl \
+    libperl-dev \
+    libgd3 \
+    libgd-dev \
+    libgeoip1 \
+    libgeoip-dev \
+    geoip-bin \
+    libxml2 \
+    libxml2-dev \
+    libxslt1.1 \
+    libxslt1-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR ${APPDIR}
-ARG NGINX_VERSION=1.19.0
-RUN git clone https://github.com/sergey-dryabzhinsky/nginx-rtmp-module.git && \
-    wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
-    tar -zxvf nginx-${NGINX_VERSION}.tar.gz && rm nginx-${NGINX_VERSION}.tar.gz && \
+
+RUN git clone --depth 1 https://github.com/sergey-dryabzhinsky/nginx-rtmp-module.git && \
+    wget -q https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
+    tar -xf nginx-${NGINX_VERSION}.tar.gz && \
+    rm nginx-${NGINX_VERSION}.tar.gz && \
     cd nginx-${NGINX_VERSION} && \
     ./configure \
     --add-module=${APPDIR}/nginx-rtmp-module \
@@ -72,8 +93,29 @@ RUN git clone https://github.com/sergey-dryabzhinsky/nginx-rtmp-module.git && \
     --with-openssl-opt=no-nextprotoneg && \
     make -j $(nproc) && \
     make install && \
-    mkdir /var/cache/nginx
+    mkdir -p /var/cache/nginx
 
+FROM ubuntu:20.04
+
+ARG NGINX_USER=www-data
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg \
+    libpcre3 \
+    libssl1.1 \
+    zlib1g \
+    perl \
+    libgd3 \
+    libgeoip1 \
+    libxml2 \
+    libxslt1.1 && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /var/cache/nginx /var/log/nginx /var/www/html/stream
+
+COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
+COPY --from=builder /etc/nginx /etc/nginx
+COPY --from=builder /usr/lib/nginx/modules /usr/lib/nginx/modules
 COPY --chown=${NGINX_USER}:${NGINX_USER} ./stream/ /var/www/html/stream/
 COPY --chown=root:root ./nginx-web/nginx.conf /etc/nginx/nginx.conf
 
