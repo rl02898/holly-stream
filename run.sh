@@ -26,7 +26,7 @@ docker compose up -d app
 echo "Holly Stream has started. Performing health check..."
 sleep 10
 
-if docker container inspect -f '{{.State.Running}}' holly-stream-app-1 &>/dev/null; then
+if docker container inspect -f '{{.State.Running}}' app &>/dev/null; then
     echo "Holly Stream STATUS: HEALTHY"
 else
     echo "Holly Stream STATUS: UNHEALTHY"

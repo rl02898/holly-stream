@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /root/app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y \
         python3.10 \
         python3-pip \
         ffmpeg && \

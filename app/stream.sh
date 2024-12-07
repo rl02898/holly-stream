@@ -12,14 +12,16 @@ if [ -z $STREAM_KEY ]; then echo "You did not define STREAM_KEY. It will default
 
 DIMS="$CAMERA_WIDTH"x"$CAMERA_HEIGHT"
 
-# video only
 if [ "${CAMERA_AUDIO}" == "True" ]; then
     ffmpeg \
         -f v4l2 \
-        -i /dev/video$CAMERA_INDEX \
         -video_size $DIMS \
         -r $CAMERA_FPS \
+        -i /dev/video$CAMERA_INDEX \
         -f alsa \
+        -thread_queue_size 4096 \
+        -ar 22050 \
+        -ac 1 \
         -i default \
         -c:v libx264 \
         -preset fast \
@@ -29,18 +31,17 @@ if [ "${CAMERA_AUDIO}" == "True" ]; then
         -bufsize 3000k \
         -g 60 \
         -c:a aac \
-        -b:a 128k \
-        -ac 2 \
+        -b:a 64k \
+        -async 1 \
+        -vsync 1 \
+        -max_muxing_queue_size 1024 \
         -f flv rtmp://$STREAM_IP:$STREAM_PORT/$STREAM_APPLICATION/$STREAM_KEY
-
-# audio/video
 else
     ffmpeg \
         -f v4l2 \
-        -input_format mjpeg \
-        -i /dev/video$CAMERA_INDEX \
         -video_size $DIMS \
         -r $CAMERA_FPS \
+        -i /dev/video$CAMERA_INDEX \
         -c:v libx264 \
         -preset fast \
         -pix_fmt yuv420p \
@@ -49,5 +50,4 @@ else
         -bufsize 3000k \
         -g 60 \
         -f flv rtmp://$STREAM_IP:$STREAM_PORT/$STREAM_APPLICATION/$STREAM_KEY
-
 fi
