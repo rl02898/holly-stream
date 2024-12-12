@@ -459,6 +459,7 @@ def main(
     camera_index: int,
     camera_width: int,
     camera_height: int,
+    camera_fps: int,
     santa_hat_plugin: bool,
 ) -> None:
     """
@@ -474,6 +475,7 @@ def main(
         camera_index (int): The index of the camera to use for video capture.
         camera_width (int): The width of the camera frame.
         camera_height (int): The height of the camera frame.
+        camera_fps (int): The frames-per-second to use on camera.
         santa_hat_plugin (bool): Indicates whether to use the Santa hat plugin.
 
     Returns:
@@ -481,9 +483,10 @@ def main(
     """
 
     camera = cv2.VideoCapture(camera_index)
+    camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, camera_width)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
-    camera_fps = int(camera.get(cv2.CAP_PROP_FPS))
+    camera.set(cv2.CAP_PROP_FPS, camera_fps)
 
     rtmp_url = "rtmp://{}:{}/{}/{}".format(
         stream_ip, stream_port, stream_application, stream_key
@@ -559,6 +562,7 @@ if __name__ == "__main__":
     parser.add_arg("CAMERA_INDEX", default=0, d_type=int)
     parser.add_arg("CAMERA_WIDTH", default=640, d_type=int)
     parser.add_arg("CAMERA_HEIGHT", default=480, d_type=int)
+    parser.add_arg("CAMERA_FPS", default=30, d_type=int)
     parser.add_arg("SANTA_HAT_PLUGIN", default=False, d_type=bool)
     args = parser.parse_args()
 
@@ -572,5 +576,6 @@ if __name__ == "__main__":
         args.CAMERA_INDEX,
         args.CAMERA_WIDTH,
         args.CAMERA_HEIGHT,
+        args.CAMERA_FPS,
         args.SANTA_HAT_PLUGIN,
     )

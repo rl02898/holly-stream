@@ -39,11 +39,12 @@ if [ "${CAMERA_AUDIO}" == "True" ]; then
 else
     ffmpeg \
         -f v4l2 \
+        -input_format mjpeg \
         -video_size $DIMS \
-        -r $CAMERA_FPS \
         -i /dev/video$CAMERA_INDEX \
         -c:v libx264 \
-        -preset fast \
+        -preset ultrafast \
+        -tune zerolatency \
         -pix_fmt yuv420p \
         -b:v 1500k \
         -maxrate 1500k \
